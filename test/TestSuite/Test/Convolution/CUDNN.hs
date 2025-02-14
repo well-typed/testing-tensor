@@ -3,7 +3,6 @@ module TestSuite.Test.Convolution.CUDNN (tests) where
 import Data.List qualified as L
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec(..))
-import Data.Vector.Storable qualified as Vector
 import Foreign
 import Foreign.C
 import System.IO.Unsafe (unsafePerformIO)
@@ -289,8 +288,8 @@ convolveCUDNN ::
   -> Tensor Nat4 a -- ^ input
   -> Tensor Nat4 a
 convolveCUDNN mode (sv, sh) kernels input = unsafePerformIO $
-    Vector.unsafeWith (Tensor.toStorable $ realToFrac <$> kernels) $ \kernelsPtr ->
-    Vector.unsafeWith (Tensor.toStorable $ realToFrac <$> input)   $ \inputPtr   ->
+    Tensor.unsafeWithCArray (realToFrac <$> kernels) $ \kernelsPtr ->
+    Tensor.unsafeWithCArray (realToFrac <$> input)   $ \inputPtr   ->
     alloca $ \outputHeightPtr ->
     alloca $ \outputWidthPtr  -> do
       outputPtr <-
@@ -312,10 +311,8 @@ convolveCUDNN mode (sv, sh) kernels input = unsafePerformIO $
       oh <- fromIntegral <$> peek outputHeightPtr
       ow <- fromIntegral <$> peek outputWidthPtr
       outputFPtr <- newForeignPtr finalizerFree outputPtr
-      let outputSize     = n ::: k ::: oh ::: ow ::: VNil
-      let outputNumElems = L.foldl' (*) 1 outputSize
-      let outputArr = Vector.unsafeFromForeignPtr0 outputFPtr outputNumElems
-      return $ realToFrac <$> Tensor.fromStorable outputSize outputArr
+      let outputSize = n ::: k ::: oh ::: ow ::: VNil
+      return $ realToFrac <$> Tensor.unsafeFromCArray outputSize outputFPtr
   where
     n ::: c ::: ih ::: iw ::: VNil = Tensor.size input
     k ::: _ ::: kh ::: kw ::: VNil = Tensor.size kernels

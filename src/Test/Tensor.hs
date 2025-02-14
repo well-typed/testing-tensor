@@ -32,7 +32,9 @@ module Test.Tensor (
   , replicate
   , rotate
   , distrib
+  , transpose
   , foreach
+  , foreachWith
     -- * Subtensors
   , subs
   , subsWithStride
@@ -58,6 +60,10 @@ module Test.Tensor (
     -- * FFI
   , toStorable
   , fromStorable
+  , unsafeWithCArray
+  , unsafeFromCArray
+  , unsafeFromPrealloc
+  , unsafeFromPrealloc_
   ) where
 
 import Prelude hiding (zipWith, replicate)
@@ -72,7 +78,7 @@ import Data.Vec.Lazy (Vec(..))
 import Data.Vec.Lazy qualified as Vec
 import Data.Vector.Storable qualified as Storable (Vector)
 import Data.Vector.Storable qualified as Vector
-import Foreign (Storable)
+import Foreign hiding (rotate)
 import GHC.Show (appPrec1, showSpace)
 import GHC.Stack
 import Numeric.Natural
@@ -147,9 +153,23 @@ distrib = \case
     go acc []     = reverse <$> acc
     go acc (t:ts) = go (zipWith (:) t acc) ts
 
+-- | Transpose
+--
+-- This is essentially a special case of 'distrib'.
+transpose :: Tensor Nat2 a -> Tensor Nat2 a
+transpose = fromLists . L.transpose . toLists
+
 -- | Map element over the first dimension of the tensor
 foreach :: Tensor (S n) a -> (Tensor n a -> Tensor m b) -> Tensor (S m) b
 foreach (Tensor as) f = Tensor (Prelude.map f as)
+
+-- | Variation of 'foreach' with an auxiliary list
+foreachWith ::
+    Tensor (S n) a
+ -> [x]
+ -> (Tensor n a -> x -> Tensor m b)
+ -> Tensor (S m) b
+foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
 
 {-------------------------------------------------------------------------------
   Subtensors
@@ -315,11 +335,49 @@ toStorable = Vector.fromList . Foldable.toList
 fromStorable ::
      (HasCallStack, Storable a)
   => Size n -> Storable.Vector a -> Tensor n a
-fromStorable sz = aux . fromList sz . Vector.toList
+fromStorable sz = fromList sz . Vector.toList
+
+-- | Get pointer to elements of the tensor
+--
+-- See 'toStorable' for discussion of the layout.
+--
+-- The data should not be modified through the pointer, and the pointer should
+-- not be used outside its scope.
+unsafeWithCArray :: Storable a => Tensor n a -> (Ptr a -> IO r) -> IO r
+unsafeWithCArray tensor = Vector.unsafeWith (toStorable tensor)
+
+-- | Construct tensor from C array
+--
+-- The data should not be modified through the pointer after the tensor has
+-- been constructed.
+unsafeFromCArray :: Storable a => Size n -> ForeignPtr a -> Tensor n a
+unsafeFromCArray sz fptr =
+    fromStorable sz $ Vector.unsafeFromForeignPtr0 fptr n
   where
-    aux :: Maybe (Tensor n a) -> Tensor n a
-    aux Nothing       = error "fromStorable: not enough elements"
-    aux (Just tensor) = tensor
+    n :: Int
+    n = L.foldl' (*) 1 sz
+
+-- | Construct tensor from preallocated C array
+--
+-- Allocates sufficient memory to hold the elements of the tensor; writing more
+-- data will result in invalid memory access. The pointer should not be used
+-- outside its scope.
+unsafeFromPrealloc ::
+     Storable a
+  => Size n -> (Ptr a -> IO r) -> IO (Tensor n a, r)
+unsafeFromPrealloc sz k = do
+    fptr <- mallocForeignPtrArray n
+    res  <- withForeignPtr fptr k
+    return (unsafeFromCArray sz fptr, res)
+  where
+    n :: Int
+    n = L.foldl' (*) 1 sz
+
+-- | Like 'unsafeFromPrealloc' but without an additional return value
+unsafeFromPrealloc_ ::
+     Storable a
+  => Size n -> (Ptr a -> IO ()) -> IO (Tensor n a)
+unsafeFromPrealloc_ sz = fmap fst . unsafeFromPrealloc sz
 
 {-------------------------------------------------------------------------------
   Convenience constructors
@@ -378,13 +436,17 @@ fromLists = go snat
 
 -- | Inverse to 'Foldable.toList'
 --
--- Returns 'Nothing' if the list does not have enough elements.
-fromList :: forall n a. Size n -> [a] -> Maybe (Tensor n a)
+-- Throws a pure exception if the list does not contain enough elements.
+fromList :: forall n a. Size n -> [a] -> Tensor n a
 fromList sz xs =
-    flip evalStateT xs $ sequenceA (replicate sz genElem)
+    checkEnoughElems . flip evalStateT xs $ sequenceA (replicate sz genElem)
   where
     genElem :: StateT [a] Maybe a
     genElem = StateT L.uncons
+
+    checkEnoughElems :: Maybe (Tensor n a) -> Tensor n a
+    checkEnoughElems Nothing  = error "fromList: insufficient elements"
+    checkEnoughElems (Just t) = t
 
 {-------------------------------------------------------------------------------
   Show instance
