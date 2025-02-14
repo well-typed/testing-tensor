@@ -1,10 +1,14 @@
 -- | Meta-tests: test the Tensor QuickCheck infrastructure
 module TestSuite.Test.QuickCheck (tests) where
 
+import Data.Foldable qualified as Foldable
 import Data.Type.Nat
+import Data.Vec.Lazy (Vec(..))
 import Test.Tasty
 import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck
 
+import Test.Tensor (Tensor)
 import Test.Tensor qualified as Tensor
 
 {-------------------------------------------------------------------------------
@@ -15,6 +19,9 @@ tests :: TestTree
 tests = testGroup "TestSuite.Test.QuickCheck" [
       testGroup "Examples" [
           testCase "shrinkWith" example_shrinkWith
+        ]
+    , testGroup "Properties" [
+          testProperty "allAxes_shrinkList" prop_allAxes_shrinkList
         ]
     ]
 
@@ -44,3 +51,26 @@ example_shrinkWith =
         , Tensor.dim2 [[1,2,3],[4,0,6]]
         , Tensor.dim2 [[1,2,3],[4,5,0]]
         ]
+
+{-------------------------------------------------------------------------------
+  Properties
+-------------------------------------------------------------------------------}
+
+-- | 'allAxes' essentially reifies the decisions made by 'shrinkList'
+prop_allAxes_shrinkList :: NonEmptyList Int -> Property
+prop_allAxes_shrinkList (getNonEmpty -> xs) =
+    counterexample ("tensor: " ++ show tensor) $
+    counterexample ("size: " ++ show size) $
+          filter (not . null) (shrinkList (const []) xs)
+      === [ Foldable.toList $ Tensor.axeWith axe tensor
+          | axe <- Tensor.allAxes size
+          ]
+  where
+    tensor :: Tensor Nat1 Int
+    tensor = Tensor.fromList (length xs ::: VNil) xs
+
+    size :: Tensor.Size Nat1
+    size = Tensor.size tensor
+
+
+

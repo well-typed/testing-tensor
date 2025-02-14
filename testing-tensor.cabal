@@ -95,7 +95,6 @@ test-suite testing-tensor-test
     c-sources:          test-cbits/test-cudnn.c
     default-extensions: CApiFFI
     extra-libraries:    cudart cudnn
-    build-depends:      vector
 
 Flag test-fft
   description: Test against an FFT implementation
