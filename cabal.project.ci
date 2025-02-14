@@ -1,0 +1,6 @@
+packages: .
+
+package testing-tensor
+  tests: true
+  -- We don't test against cuDNN on CI as we don't have a GPU
+  flags: +test-fft
