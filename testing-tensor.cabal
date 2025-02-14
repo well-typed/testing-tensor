@@ -34,6 +34,7 @@ common lang
       -Wno-unticked-promoted-constructors
 
   default-extensions:
+      CApiFFI
       DataKinds
       DerivingStrategies
       LambdaCase
@@ -46,6 +47,7 @@ library
 
   exposed-modules:
       Test.Tensor
+      Test.Tensor.TestValue
 
   build-depends:
     , fin          >= 0.3  && < 0.4
@@ -78,7 +80,6 @@ test-suite testing-tensor-test
       TestSuite.Test.QuickCheck
       TestSuite.Test.StdOps
       TestSuite.Util.TestKernel
-      TestSuite.Util.TestValue
 
   if flag(test-fft)
     cpp-options:   -DTEST_FFT
@@ -89,12 +90,11 @@ test-suite testing-tensor-test
       , fft    >= 0.1 && < 0.2
 
   if flag(test-cudnn)
-    cpp-options:        -DTEST_CUDNN
-    other-modules:      TestSuite.Test.Convolution.CUDNN
-    include-dirs:       test-cbits
-    c-sources:          test-cbits/test-cudnn.c
-    default-extensions: CApiFFI
-    extra-libraries:    cudart cudnn
+    cpp-options:     -DTEST_CUDNN
+    other-modules:   TestSuite.Test.Convolution.CUDNN
+    include-dirs:    test-cbits
+    c-sources:       test-cbits/test-cudnn.c
+    extra-libraries: cudart cudnn
 
 Flag test-fft
   description: Test against an FFT implementation

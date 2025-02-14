@@ -9,9 +9,9 @@ import Test.Tasty.QuickCheck
 
 import Test.Tensor (Tensor)
 import Test.Tensor qualified as Tensor
+import Test.Tensor.TestValue
 
 import TestSuite.Test.Convolution.Examples3B1B
-import TestSuite.Util.TestValue
 
 {-------------------------------------------------------------------------------
   List of tests
