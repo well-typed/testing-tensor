@@ -51,12 +51,18 @@ module Test.Tensor (
     -- ** Generation
   , arbitraryOfSize
     -- ** Shrinking
-  , Axe(..)
-  , allAxes
-  , axeWith
   , shrinkWith
   , shrinkWith'
   , shrinkElem
+    -- *** Axes
+  , Axe(..)
+  , allAxes
+  , axeWith
+  , axeSize
+    -- *** Zeroing
+  , Zero(..)
+  , zero
+  , zeroWith
     -- * FFI
   , toStorable
   , fromStorable
@@ -69,9 +75,12 @@ module Test.Tensor (
 import Prelude hiding (zipWith, replicate)
 
 import Control.Monad.Trans.State (StateT(..), evalStateT)
+import Data.Bifunctor
 import Data.Foldable (foldl')
 import Data.Foldable qualified as Foldable
 import Data.List qualified as L
+import Data.Maybe (catMaybes)
+import Data.Ord
 import Data.Proxy
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec(..))
@@ -255,69 +264,138 @@ data Axe (n :: Nat) where
 
 deriving instance Show (Axe n)
 
+-- | How many elements are removed by this axe?
+--
+-- Examples:
+--
+-- > axeSize (2 ::: 100 ::: VNil) (AxeHere (0, 1))               == 100
+-- > axeSize (2 ::: 100 ::: VNil) (AxeNested (AxeHere (0, 99)))  == 198
+axeSize :: Size n -> Axe n -> Int
+axeSize = flip go
+  where
+    go ::  Axe n -> Size n -> Int
+    go (AxeHere (_, len)) (_ ::: ns) = len * L.foldl' (*) 1 ns
+    go (AxeNested axe)    (n ::: ns) = n * go axe ns
+
 -- | All possible ways to axe some elements
 --
 -- This is adopted from the implementation of 'shrinkList' (in a way, an 'Axe'
 -- is an explanation of the decisions made by 'shrinkList', generalized to
 -- multiple dimensions).
+--
+-- Axes are sorted to remove as many elements as early as possible.
 allAxes :: Size n -> [Axe n]
-allAxes sz =
-    case sz of
-      VNil     -> []
-      n ::: ns -> concat [
-            -- Drop in this dimension
-            concat [
-                L.map AxeHere (removes 0 k n)
-              | k <- takeWhile (> 0) (iterate (`div` 2) (n `div` 2))
-              ]
-
-            -- Drop in a nested dimension
-          , L.map AxeNested (allAxes ns)
-          ]
+allAxes = \sz ->
+    L.sortBy (flip $ comparing (axeSize sz)) $ go sz
   where
+    go :: Size n -> [Axe n]
+    go VNil       = []
+    go (n ::: ns) = concat [
+          concat [
+              L.map AxeHere (removes 0 k n)
+            | k <- takeWhile (> 0) (iterate (`div` 2) (n `div` 2))
+            ]
+        , L.map AxeNested (go ns)
+        ]
+
     removes :: Int -> Int -> Int -> [(Int, Int)]
     removes offset k n
       | k > n     = []
       | otherwise = (offset, k) : removes (offset + k) k (n - k)
 
+-- | Remove elements from the tensor (shrink dimensions)
 axeWith :: Axe n -> Tensor n a -> Tensor n a
 axeWith (AxeHere (offset, len)) (Tensor xss) = Tensor $
-    let (keep, dropFrom) = L.splitAt offset xss
-    in keep <> drop len dropFrom
+    before <> after
+  where
+    (before, dropFrom) = L.splitAt offset xss
+    (_dropped, after)  = L.splitAt len dropFrom
 axeWith (AxeNested axe) (Tensor xss) = Tensor $
     L.map (axeWith axe) xss
 
+-- | Zero element
+data Zero a where
+  Zero :: Eq a => a -> Zero a
+
+-- | Default 'Zero'
+zero :: (Num a, Eq a) => Zero a
+zero = Zero 0
+
+-- | Zero elements in the tensor (leaving dimensions the same)
+--
+-- Returns 'Nothing' if the specified region was already zero everywhere.
+zeroWith :: forall n a. Zero a -> Axe n -> Tensor n a -> Maybe (Tensor n a)
+zeroWith (Zero z) = \axe tensor ->
+    case go axe (size tensor) tensor of
+      (_, False)      -> Nothing
+      (tensor', True) -> Just tensor'
+  where
+    -- Additionally returns if anything changed
+    go :: forall n'. Axe n' -> Size n' -> Tensor n' a -> (Tensor n' a, Bool)
+    go (AxeHere (offset, len)) (_ ::: ns) (Tensor xss) = (
+          Tensor $ before <> L.replicate len (replicate ns z) <> after
+        , any (/= z) (Tensor dropped)
+        )
+      where
+         (before, dropFrom) = L.splitAt offset xss
+         (dropped, after)   = L.splitAt len dropFrom
+    go (AxeNested axe) (_ ::: ns) (Tensor xss) =
+        bimap Tensor or $ L.unzip $ L.map (go axe ns) xss
+
 -- | Shrink tensor
-shrinkWith :: (a -> [a]) -> Tensor n a -> [Tensor n a]
-shrinkWith f xs = shrinkWith' (allAxes (size xs)) f xs
+shrinkWith ::
+     Maybe (Zero a)  -- ^ Optional zero element (see 'shrinkElem')
+  -> (a -> [a])      -- ^ Shrink individual elements
+  -> Tensor n a -> [Tensor n a]
+shrinkWith mZero f xs = shrinkWith' (allAxes (size xs)) mZero f xs
 
 -- | Generalization of 'shrinkWith'
 shrinkWith' :: forall n a.
-     [Axe n]     -- ^ Shrink the size of the tensor (see 'allAxes')
-  -> (a -> [a])  -- ^ Shrink elements of the tensor
+     [Axe n]         -- ^ Shrink the size of the tensor (see 'allAxes')
+  -> Maybe (Zero a)  -- ^ Optional zero element (see 'shrinkElem')
+  -> (a -> [a])      -- ^ Shrink elements of the tensor
   -> Tensor n a -> [Tensor n a]
-shrinkWith' axes f xss = concat [
+shrinkWith' axes mZero f xss = concat [
       [axeWith axe xss | axe <- axes]
-    , shrinkElem f xss
+    , shrinkElem mZero f xss
     ]
 
 -- | Shrink an element of the tensor, leaving the size of the tensor unchanged
 --
--- This is an internal function.
-shrinkElem :: (a -> [a]) -> Tensor n a -> [Tensor n a]
-shrinkElem f (Scalar x)   = Scalar <$> f x
-shrinkElem f (Tensor xss) = [
-      Tensor $ before ++ [xs'] ++ after
-    | (before, xs, after) <- pickOne xss
-    , xs' <- shrinkElem f xs
+-- If a zero element is specified, we will first try to replace entire regions
+-- of the tensor by zeroes; this can dramatically speed up shrinking.
+shrinkElem :: forall n a.
+     Maybe (Zero a)  -- ^ Optional zero element
+  -> (a -> [a])      -- ^ Shrink individual elements
+  -> Tensor n a -> [Tensor n a]
+shrinkElem mZero f tensor = concat [
+      case mZero of
+        Nothing -> []
+        Just z  -> catMaybes [
+            zeroWith z axe tensor
+          | axe <- allAxes overallSize
+          , axeSize overallSize axe > 1
+          ]
+    , shrinkOne tensor
     ]
+  where
+    overallSize :: Size n
+    overallSize = size tensor
 
-instance (SNatI n, Arbitrary a) => Arbitrary (Tensor n a) where
+    shrinkOne :: forall n'. Tensor n' a -> [Tensor n' a]
+    shrinkOne (Scalar x)   = Scalar <$> f x
+    shrinkOne (Tensor xss) = [
+          Tensor $ before ++ [xs'] ++ after
+        | (before, xs, after) <- pickOne xss
+        , xs' <- shrinkOne xs
+        ]
+
+instance (SNatI n, Arbitrary a, Num a, Eq a) => Arbitrary (Tensor n a) where
   arbitrary = QC.sized $ \n -> do
       sz :: Size n <- QC.liftArbitrary $ QC.choose (1, 1 + n)
       arbitraryOfSize sz arbitrary
 
-  shrink = shrinkWith shrink
+  shrink = shrinkWith (Just (Zero 0)) shrink
 
 {-------------------------------------------------------------------------------
   FFI

@@ -22,6 +22,8 @@ tests = testGroup "TestSuite.Test.QuickCheck" [
         ]
     , testGroup "Properties" [
           testProperty "allAxes_shrinkList" prop_allAxes_shrinkList
+        , testProperty "axeSize" prop_axeSize
+        , testProperty "length_zeroWith" prop_length_zeroWith
         ]
     ]
 
@@ -32,17 +34,27 @@ tests = testGroup "TestSuite.Test.QuickCheck" [
 example_shrinkWith :: Assertion
 example_shrinkWith =
     assertEqual "" expected $
-      Tensor.shrinkWith (const [0]) (Tensor.dim2 [[1,2,3], [4,5,6]])
+      Tensor.shrinkWith
+        (Just $ Tensor.Zero (-1))
+        (const [0])
+        (Tensor.dim2 [[1,2,3], [4,5,6]])
   where
     expected :: [Tensor.Tensor Nat2 Int]
     expected = [
-        -- Shrink outer dimension
+          -- Shrink outer dimension
           Tensor.dim2 [[4,5,6]]
         , Tensor.dim2 [[1,2,3]]
-         -- Shrink inner dimension
+          -- Shrink inner dimension
         , Tensor.dim2 [[2,3],[5,6]]
         , Tensor.dim2 [[1,3],[4,6]]
         , Tensor.dim2 [[1,2],[4,5]]
+          -- Zero outer dimension
+        , Tensor.dim2 [[-1,-1,-1],[4,5,6]]
+        , Tensor.dim2 [[1,2,3],[-1,-1,-1]]
+          -- Zero inner dimension
+        , Tensor.dim2 [[-1,2,3],[-1,5,6]]
+        , Tensor.dim2 [[1,-1,3],[4,-1,6]]
+        , Tensor.dim2 [[1,2,-1],[4,5,-1]]
           -- Shrink one of the elements
         , Tensor.dim2 [[0,2,3],[4,5,6]]
         , Tensor.dim2 [[1,0,3],[4,5,6]]
@@ -70,4 +82,27 @@ prop_allAxes_shrinkList (getNonEmpty -> xs) =
     tensor = Tensor.fromList (length xs ::: VNil) xs
 
     size :: Tensor.Size Nat1
+    size = Tensor.size tensor
+
+prop_axeSize :: Tensor Nat2 Int -> Property
+prop_axeSize tensor = conjoin [
+      counterexample ("axe: " ++ show axe) $
+            length (Tensor.axeWith axe tensor)
+        === length tensor - Tensor.axeSize size axe
+    | axe <- Tensor.allAxes size
+    ]
+  where
+    size :: Tensor.Size Nat2
+    size = Tensor.size tensor
+
+prop_length_zeroWith :: Tensor Nat2 Int -> Property
+prop_length_zeroWith tensor = conjoin [
+      counterexample ("axe: " ++ show axe) $
+        case Tensor.zeroWith Tensor.zero axe tensor of
+          Nothing      -> property True
+          Just tensor' -> length tensor' === length tensor
+    | axe <- Tensor.allAxes size
+    ]
+  where
+    size :: Tensor.Size Nat2
     size = Tensor.size tensor

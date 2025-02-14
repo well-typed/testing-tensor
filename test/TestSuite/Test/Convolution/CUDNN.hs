@@ -12,10 +12,10 @@ import Test.Tasty.QuickCheck
 
 import Test.Tensor (Tensor(..))
 import Test.Tensor qualified as Tensor
+import Test.Tensor.TestValue
 
 import TestSuite.Test.Convolution.Examples3B1B
 import TestSuite.Util.TestKernel
-import TestSuite.Util.TestValue
 
 {-------------------------------------------------------------------------------
   Lists of tests
@@ -163,7 +163,7 @@ data ConvolutionParams a = ConvolutionParams {
     }
   deriving stock (Show)
 
-instance Arbitrary a => Arbitrary (ConvolutionParams a) where
+instance (Arbitrary a, Num a, Eq a) => Arbitrary (ConvolutionParams a) where
   arbitrary = sized $ \n -> do
       numImages      <- choose (1, max 1 n)
       inputFeatures  <- choose (1, 3)
@@ -225,12 +225,12 @@ instance Arbitrary a => Arbitrary (ConvolutionParams a) where
 
         -- Shrink input elements
       , [ params{input = images'}
-        | images' <- Tensor.shrinkElem shrink input
+        | images' <- Tensor.shrinkElem (Just Tensor.zero) shrink input
         ]
 
         -- Shrink kernel element
       , [ params{kernels = outputFeatures'}
-        | outputFeatures' <- Tensor.shrinkElem shrink kernels
+        | outputFeatures' <- Tensor.shrinkElem Nothing shrink kernels
         ]
       ]
     where
