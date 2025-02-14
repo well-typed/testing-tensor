@@ -71,6 +71,3 @@ prop_allAxes_shrinkList (getNonEmpty -> xs) =
 
     size :: Tensor.Size Nat1
     size = Tensor.size tensor
-
-
-
