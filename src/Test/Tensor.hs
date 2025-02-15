@@ -91,7 +91,7 @@ import Foreign hiding (rotate)
 import GHC.Show (appPrec1, showSpace)
 import GHC.Stack
 import Numeric.Natural
-import Test.QuickCheck (Arbitrary(..), Gen)
+import Test.QuickCheck (Arbitrary(..), Arbitrary1(..), Gen)
 import Test.QuickCheck qualified as QC
 
 {-------------------------------------------------------------------------------
@@ -391,11 +391,21 @@ shrinkElem mZero f tensor = concat [
         ]
 
 instance (SNatI n, Arbitrary a, Num a, Eq a) => Arbitrary (Tensor n a) where
-  arbitrary = QC.sized $ \n -> do
-      sz :: Size n <- QC.liftArbitrary $ QC.choose (1, 1 + n)
-      arbitraryOfSize sz arbitrary
+  arbitrary = liftArbitrary arbitrary
 
   shrink = shrinkWith (Just (Zero 0)) shrink
+
+-- | Lift generators and shrinkers
+--
+-- NOTE: Since we cannot put any bounds on the type of the elements here, we
+-- cannot use any zero elements. Using 'shrink' (or 'shrinkWith' directly) might
+-- result in faster shrinking.
+instance SNatI n => Arbitrary1 (Tensor n) where
+  liftArbitrary g = QC.sized $ \n -> do
+      sz :: Size n <- liftArbitrary $ QC.choose (1, 1 + n)
+      arbitraryOfSize sz g
+
+  liftShrink f = shrinkWith Nothing f
 
 {-------------------------------------------------------------------------------
   FFI
