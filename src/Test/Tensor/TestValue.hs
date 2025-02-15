@@ -6,6 +6,7 @@ module Test.Tensor.TestValue (
   ) where
 
 import Data.List (sort)
+import System.Random (Random)
 import Test.QuickCheck
 import Text.Printf (printf)
 
@@ -18,7 +19,7 @@ import Text.Printf (printf)
 -- Test values are suitable for use in QuickCheck tests involving floating
 -- point numbers, if you want to ignore rounding errors.
 newtype TestValue = TestValue Float
-  deriving newtype (Num, Fractional, Real)
+  deriving newtype (Num, Fractional, Real, Random)
 
 -- | Test values are equipped with a crude equality
 --
@@ -41,6 +42,7 @@ instance Eq TestValue where
 -- they are considered to be equal.
 --
 -- > show @TestValue 0     == "0"     -- True zero
+-- > show @TestValue 1     == "1"     -- True one
 -- > show @TestValue 0.001 == "0.00"
 -- > show @TestValue 0.009 == "0.01"
 -- > show @TestValue 1.001 == "1.0"
@@ -48,6 +50,7 @@ instance Eq TestValue where
 instance Show TestValue where
   show (TestValue x)
     | x == 0    = "0"
+    | x == 1    = "1"
     | x <  1    = printf "%0.2f" x
     | x <  10   = printf "%0.1f" x
     | otherwise = printf "%0.0f" x
