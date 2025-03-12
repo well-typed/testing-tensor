@@ -122,9 +122,7 @@ prop_mode params =
 -------------------------------------------------------------------------------}
 
 -- | cuDNN-style convolutions, but using our implementation
-convolve_cuDNN_style :: forall a.
-     (Fractional a, Real a)
-  => ConvolutionParams a -> Tensor Nat4 a
+convolve_cuDNN_style :: Real a => ConvolutionParams a -> Tensor Nat4 a
 convolve_cuDNN_style params =
     Tensor.foreach input $ \channels -> Tensor [
         -- Both the input and the kernel have 3 channels, so the result must

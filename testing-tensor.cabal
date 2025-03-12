@@ -28,9 +28,10 @@ common lang
 
   ghc-options:
       -Wall
-      -Wprepositive-qualified-module
-      -Wunused-packages
       -Widentities
+      -Wprepositive-qualified-module
+      -Wredundant-constraints
+      -Wunused-packages
       -Wno-unticked-promoted-constructors
 
   default-extensions:

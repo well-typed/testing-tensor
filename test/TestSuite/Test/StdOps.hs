@@ -32,7 +32,7 @@ tests = testGroup "TestSuite.Test.StdOps" [
   Properties
 -------------------------------------------------------------------------------}
 
-prop_fromList_toList :: SNatI n => Tensor n Int -> Property
+prop_fromList_toList :: Tensor n Int -> Property
 prop_fromList_toList tensor =
         Tensor.fromList (Tensor.size tensor) (Foldable.toList tensor)
     === tensor

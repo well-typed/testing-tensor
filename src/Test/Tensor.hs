@@ -544,7 +544,7 @@ fromLists = go snat
 -- | Inverse to 'Foldable.toList'
 --
 -- Throws a pure exception if the list does not contain enough elements.
-fromList :: forall n a. Size n -> [a] -> Tensor n a
+fromList :: forall n a. HasCallStack => Size n -> [a] -> Tensor n a
 fromList sz xs =
     checkEnoughElems . flip evalStateT xs $ sequenceA (replicate sz genElem)
   where
