@@ -37,7 +37,6 @@ module Test.Tensor (
   , foreachWith
     -- * Subtensors
   , subs
-  , subsWithStride
   , convolve
   , convolveWithStride
   , padWith
@@ -180,41 +179,30 @@ foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
   Subtensors
 -------------------------------------------------------------------------------}
 
--- | Subtensors of the specified size
-subs :: SNatI n => Size n -> Tensor n a -> Tensor n (Tensor n a)
-subs = subsWithStride (pure 1)
-
 -- | Compute number of subtensors
 numSubs ::
-     Vec n Int -- ^ Stride
-  -> Size n    -- ^ Kernel size
-  -> Size n    -- ^ Input size
-  -> Size n    -- ^ Output size
-numSubs VNil       VNil       VNil       = VNil
-numSubs (s ::: ss) (k ::: ks) (i ::: is) =
-        (i - k + 1) `divRoundUp` s
-    ::: numSubs ss ks is
-  where
-    divRoundUp :: Int -> Int -> Int
-    divRoundUp x y =
-        let (d, m) = divMod x y
-        in d + if m == 0 then 0 else 1
+     Size n  -- ^ Kernel size
+  -> Size n  -- ^ Input size
+  -> Size n  -- ^ Output size
+numSubs VNil       VNil       = VNil
+numSubs (k ::: ks) (i ::: is) = (i - k + 1) ::: numSubs ks is
 
--- | Generalization of 'subs' with non-default stride
-subsWithStride ::
-     Vec n Int  -- ^ Stride
-  -> Size n     -- ^ Kernel
-  -> Tensor n a -- ^ Input
-  -> Tensor n (Tensor n a)
-subsWithStride = \stride kernelSize input ->
-    go (numSubs stride kernelSize (size input)) stride kernelSize input
+-- | Subtensors of the specified size
+subs :: Size n -> Tensor n a -> Tensor n (Tensor n a)
+subs = \kernelSize input ->
+    go (numSubs kernelSize (size input)) kernelSize input
   where
-    go :: Size n -> Vec n Int -> Size n -> Tensor n a -> Tensor n (Tensor n a)
-    go VNil       VNil       VNil       (Scalar x)  = Scalar (Scalar x)
-    go (_ ::: rs) (s ::: ss) (n ::: ns) (Tensor xs) = Tensor [
+    go :: Size n -> Size n -> Tensor n a -> Tensor n (Tensor n a)
+    go VNil       VNil       (Scalar x)  = Scalar (Scalar x)
+    go (_ ::: rs) (n ::: ns) (Tensor xs) = Tensor [
           Tensor <$> distrib rs selected
-        | selected <- everyNth s $ consecutive n (map (go rs ss ns) xs)
+        | selected <- consecutive n (map (go rs ns) xs)
         ]
+
+applyStride :: Vec n Int -> Tensor n a -> Tensor n a
+applyStride VNil       (Scalar x)  = Scalar x
+applyStride (s ::: ss) (Tensor xs) = Tensor $
+    everyNth s (map (applyStride ss) xs)
 
 -- | Convolution
 --
@@ -234,7 +222,7 @@ convolveWithStride :: forall n a.
   -> Tensor n a  -- ^ Input
   -> Tensor n a
 convolveWithStride stride kernel input =
-    aux <$> subsWithStride stride (size kernel) input
+    aux <$> applyStride stride (subs (size kernel) input)
   where
     aux :: Tensor n a -> a
     aux = foldl' (+) 0 . zipWith (*) kernel
