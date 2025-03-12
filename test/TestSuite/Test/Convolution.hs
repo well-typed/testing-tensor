@@ -35,9 +35,8 @@ tests = testGroup "TestSuite.Test.Convolution.Prop" [
         , testCase "weightedDice"          example_3b1b_weightedDice
         ]
     , testGroup "Properties" [
-          testProperty "distrib_dim0"            prop_distrib_dim0
-        , testProperty "distrib_dim1"            prop_distrib_dim1
-        , testProperty "distrib_dim1_nonUniform" prop_distrib_dim1_nonUniform
+          testProperty "distrib_dim0" prop_distrib_dim0
+        , testProperty "distrib_dim1" prop_distrib_dim1
         ]
     ]
 
@@ -56,7 +55,7 @@ example_rotate =
 example_distrib_dim2 :: Assertion
 example_distrib_dim2 =
     assertEqual "" expected $
-      Tensor.distrib input
+      Tensor.distrib (Tensor.size expected) input
   where
     input :: [Tensor Nat2 Int]
     input = [
@@ -210,22 +209,23 @@ example_3b1b_movingWeightedAverage =
 -- | Distribute over a list of 0-D tensor is the identity
 prop_distrib_dim0 :: NonEmptyList Int -> Property
 prop_distrib_dim0 (getNonEmpty -> xs) =
-        Tensor.toLists (Tensor.distrib (map Tensor.scalar xs))
+        Tensor.toLists (Tensor.distrib size (map Tensor.scalar xs))
     === xs
+  where
+    size :: Tensor.Size Nat0
+    size = VNil
 
 -- | Distribute over a list of 1-D tensor is 'transpose'
+--
+-- This is true only for rectangular input.
 prop_distrib_dim1 :: NonEmptyList (NonEmptyList Int) -> Property
 prop_distrib_dim1 (getSameLength -> xss) =
     counterexample ("input: " ++ show xss) $
-          Tensor.toLists (Tensor.distrib (map Tensor.dim1 xss))
+          Tensor.toLists (Tensor.distrib size (map Tensor.dim1 xss))
       === L.transpose xss
-
--- | Counterpart to 'prop_distrib_dim1': this is only true for same-size lists
-prop_distrib_dim1_nonUniform :: NonEmptyList (NonEmptyList Int) -> Property
-prop_distrib_dim1_nonUniform (getNonEmpty2 -> xss) =
-    expectFailure $
-          Tensor.toLists (Tensor.distrib (map Tensor.dim1 xss))
-      === L.transpose xss
+  where
+    size :: Tensor.Size Nat1
+    size = length (L.head xss) ::: VNil
 
 {-------------------------------------------------------------------------------
   Auxiliary

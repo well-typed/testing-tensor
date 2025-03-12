@@ -150,17 +150,13 @@ rotate :: Tensor n a -> Tensor n a
 rotate (Scalar x)  = Scalar x
 rotate (Tensor xs) = Tensor $ map rotate (L.reverse xs)
 
--- | Distribute '[]' over 'Tensor'
+-- | Analogue of @distribute@ (@distributive@ package)
 --
--- Collects values in corresponding in all tensors.
-distrib :: [Tensor n a] -> Tensor n [a]
-distrib = \case
-    []   -> error "distrib: empty list"
-    t:ts -> go ((:[]) <$> t) ts
-  where
-    go :: Tensor n [a] -> [Tensor n a] -> Tensor n [a]
-    go acc []     = reverse <$> acc
-    go acc (t:ts) = go (zipWith (:) t acc) ts
+-- Since we don't track the complete size of the tensor at the type level, we
+-- must be told how large the resulting tensor is going to be.
+distrib :: Functor f => Size n -> f (Tensor n a) -> Tensor n (f a)
+distrib VNil       = Scalar . fmap getScalar
+distrib (n ::: ns) = Tensor . fmap (distrib ns) . distribList n . fmap getTensor
 
 -- | Transpose
 --
@@ -188,13 +184,37 @@ foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
 subs :: SNatI n => Size n -> Tensor n a -> Tensor n (Tensor n a)
 subs = subsWithStride (pure 1)
 
+-- | Compute number of subtensors
+numSubs ::
+     Vec n Int -- ^ Stride
+  -> Size n    -- ^ Kernel size
+  -> Size n    -- ^ Input size
+  -> Size n    -- ^ Output size
+numSubs VNil       VNil       VNil       = VNil
+numSubs (s ::: ss) (k ::: ks) (i ::: is) =
+        (i - k + 1) `divRoundUp` s
+    ::: numSubs ss ks is
+  where
+    divRoundUp :: Int -> Int -> Int
+    divRoundUp x y =
+        let (d, m) = divMod x y
+        in d + if m == 0 then 0 else 1
+
 -- | Generalization of 'subs' with non-default stride
-subsWithStride :: Vec n Int -> Size n -> Tensor n a -> Tensor n (Tensor n a)
-subsWithStride VNil       VNil       (Scalar x)  = Scalar (Scalar x)
-subsWithStride (s ::: ss) (n ::: ns) (Tensor xs) = Tensor [
-      Tensor <$> distrib selected
-    | selected <- everyNth s $ consecutive n (map (subsWithStride ss ns) xs)
-    ]
+subsWithStride ::
+     Vec n Int  -- ^ Stride
+  -> Size n     -- ^ Kernel
+  -> Tensor n a -- ^ Input
+  -> Tensor n (Tensor n a)
+subsWithStride = \stride kernelSize input ->
+    go (numSubs stride kernelSize (size input)) stride kernelSize input
+  where
+    go :: Size n -> Vec n Int -> Size n -> Tensor n a -> Tensor n (Tensor n a)
+    go VNil       VNil       VNil       (Scalar x)  = Scalar (Scalar x)
+    go (_ ::: rs) (s ::: ss) (n ::: ns) (Tensor xs) = Tensor [
+          Tensor <$> distrib rs selected
+        | selected <- everyNth s $ consecutive n (map (go rs ss ns) xs)
+        ]
 
 -- | Convolution
 --
@@ -615,3 +635,8 @@ pickOne = \case
     go :: [a] -> a -> [a] -> [([a], a, [a])]
     go acc x []     = [(reverse acc, x, [])]
     go acc x (y:ys) = (reverse acc, x, (y:ys)) : go (x:acc) y ys
+
+-- | Distribute @f@ over @[]@
+distribList :: Functor f => Int -> f [a] -> [f a]
+distribList 0 _   = []
+distribList n fxs = (head <$> fxs) : distribList (n - 1) (tail <$> fxs)
