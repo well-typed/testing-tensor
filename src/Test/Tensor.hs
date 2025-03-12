@@ -180,6 +180,8 @@ foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
 -------------------------------------------------------------------------------}
 
 -- | Compute number of subtensors
+--
+-- Internal auxiliary.
 numSubs ::
      Size n  -- ^ Kernel size
   -> Size n  -- ^ Input size
@@ -194,11 +196,16 @@ subs = \kernelSize input ->
   where
     go :: Size n -> Size n -> Tensor n a -> Tensor n (Tensor n a)
     go VNil       VNil       (Scalar x)  = Scalar (Scalar x)
-    go (_ ::: rs) (n ::: ns) (Tensor xs) = Tensor [
+    go (r ::: rs) (n ::: ns) (Tensor xs) = Tensor [
           Tensor <$> distrib rs selected
-        | selected <- consecutive n (map (go rs ns) xs)
+        | selected <- consecutive r n (map (go rs ns) xs)
         ]
 
+-- | Apply stride.
+--
+-- This is the N-dimensional equivalent of 'everyNth'.
+--
+-- Internal auxiliary.
 applyStride :: Vec n Int -> Tensor n a -> Tensor n a
 applyStride VNil       (Scalar x)  = Scalar x
 applyStride (s ::: ss) (Tensor xs) = Tensor $
@@ -583,12 +590,12 @@ tensorSNat tensor = tensorSNatI tensor snat
   Internal auxiliary: lists
 -------------------------------------------------------------------------------}
 
--- | Consecutive elements
+-- | The first @r@ sublists of length @n@
 --
--- >    consecutive 3 [1..5]
--- > == [[1,2,3],[2,3,4],[3,4,5]]
-consecutive :: Int -> [a] -> [[a]]
-consecutive n = L.takeWhile ((== n) . length) . fmap (L.take n) . L.tails
+-- >    consecutive 4 3 [1..6]
+-- > == [[1,2,3],[2,3,4],[3,4,5],[4,5,6]]
+consecutive :: Int -> Int -> [a] -> [[a]]
+consecutive r n = L.take r . L.map (L.take n) . L.tails
 
 -- | Every nth element of the list
 --
