@@ -37,7 +37,6 @@ module Test.Tensor (
   , foreachWith
     -- * Subtensors
   , subs
-  , subsWithStride
   , convolve
   , convolveWithStride
   , padWith
@@ -150,17 +149,13 @@ rotate :: Tensor n a -> Tensor n a
 rotate (Scalar x)  = Scalar x
 rotate (Tensor xs) = Tensor $ map rotate (L.reverse xs)
 
--- | Distribute '[]' over 'Tensor'
+-- | Analogue of @distribute@ (@distributive@ package)
 --
--- Collects values in corresponding in all tensors.
-distrib :: [Tensor n a] -> Tensor n [a]
-distrib = \case
-    []   -> error "distrib: empty list"
-    t:ts -> go ((:[]) <$> t) ts
-  where
-    go :: Tensor n [a] -> [Tensor n a] -> Tensor n [a]
-    go acc []     = reverse <$> acc
-    go acc (t:ts) = go (zipWith (:) t acc) ts
+-- Since we don't track the complete size of the tensor at the type level, we
+-- must be told how large the resulting tensor is going to be.
+distrib :: Functor f => Size n -> f (Tensor n a) -> Tensor n (f a)
+distrib VNil       = Scalar . fmap getScalar
+distrib (n ::: ns) = Tensor . fmap (distrib ns) . distribList n . fmap getTensor
 
 -- | Transpose
 --
@@ -184,17 +179,37 @@ foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
   Subtensors
 -------------------------------------------------------------------------------}
 
--- | Subtensors of the specified size
-subs :: SNatI n => Size n -> Tensor n a -> Tensor n (Tensor n a)
-subs = subsWithStride (pure 1)
+-- | Compute number of subtensors
+--
+-- Internal auxiliary.
+numSubs ::
+     Size n  -- ^ Kernel size
+  -> Size n  -- ^ Input size
+  -> Size n  -- ^ Output size
+numSubs VNil       VNil       = VNil
+numSubs (k ::: ks) (i ::: is) = (i - k + 1) ::: numSubs ks is
 
--- | Generalization of 'subs' with non-default stride
-subsWithStride :: Vec n Int -> Size n -> Tensor n a -> Tensor n (Tensor n a)
-subsWithStride VNil       VNil       (Scalar x)  = Scalar (Scalar x)
-subsWithStride (s ::: ss) (n ::: ns) (Tensor xs) = Tensor [
-      Tensor <$> distrib selected
-    | selected <- everyNth s $ consecutive n (map (subsWithStride ss ns) xs)
-    ]
+-- | Subtensors of the specified size
+subs :: Size n -> Tensor n a -> Tensor n (Tensor n a)
+subs = \kernelSize input ->
+    go (numSubs kernelSize (size input)) kernelSize input
+  where
+    go :: Size n -> Size n -> Tensor n a -> Tensor n (Tensor n a)
+    go VNil       VNil       (Scalar x)  = Scalar (Scalar x)
+    go (r ::: rs) (n ::: ns) (Tensor xs) = Tensor [
+          Tensor <$> distrib rs selected
+        | selected <- consecutive r n (map (go rs ns) xs)
+        ]
+
+-- | Apply stride.
+--
+-- This is the N-dimensional equivalent of 'everyNth'.
+--
+-- Internal auxiliary.
+applyStride :: Vec n Int -> Tensor n a -> Tensor n a
+applyStride VNil       (Scalar x)  = Scalar x
+applyStride (s ::: ss) (Tensor xs) = Tensor $
+    everyNth s (map (applyStride ss) xs)
 
 -- | Convolution
 --
@@ -214,7 +229,7 @@ convolveWithStride :: forall n a.
   -> Tensor n a  -- ^ Input
   -> Tensor n a
 convolveWithStride stride kernel input =
-    aux <$> subsWithStride stride (size kernel) input
+    aux <$> applyStride stride (subs (size kernel) input)
   where
     aux :: Tensor n a -> a
     aux = foldl' (+) 0 . zipWith (*) kernel
@@ -524,7 +539,7 @@ fromLists = go snat
 -- | Inverse to 'Foldable.toList'
 --
 -- Throws a pure exception if the list does not contain enough elements.
-fromList :: forall n a. Size n -> [a] -> Tensor n a
+fromList :: forall n a. HasCallStack => Size n -> [a] -> Tensor n a
 fromList sz xs =
     checkEnoughElems . flip evalStateT xs $ sequenceA (replicate sz genElem)
   where
@@ -575,12 +590,12 @@ tensorSNat tensor = tensorSNatI tensor snat
   Internal auxiliary: lists
 -------------------------------------------------------------------------------}
 
--- | Consecutive elements
+-- | The first @r@ sublists of length @n@
 --
--- >    consecutive 3 [1..5]
--- > == [[1,2,3],[2,3,4],[3,4,5]]
-consecutive :: Int -> [a] -> [[a]]
-consecutive n = L.takeWhile ((== n) . length) . fmap (L.take n) . L.tails
+-- >    consecutive 4 3 [1..6]
+-- > == [[1,2,3],[2,3,4],[3,4,5],[4,5,6]]
+consecutive :: Int -> Int -> [a] -> [[a]]
+consecutive r n = L.take r . L.map (L.take n) . L.tails
 
 -- | Every nth element of the list
 --
@@ -615,3 +630,8 @@ pickOne = \case
     go :: [a] -> a -> [a] -> [([a], a, [a])]
     go acc x []     = [(reverse acc, x, [])]
     go acc x (y:ys) = (reverse acc, x, (y:ys)) : go (x:acc) y ys
+
+-- | Distribute @f@ over @[]@
+distribList :: Functor f => Int -> f [a] -> [f a]
+distribList 0 _   = []
+distribList n fxs = (head <$> fxs) : distribList (n - 1) (tail <$> fxs)

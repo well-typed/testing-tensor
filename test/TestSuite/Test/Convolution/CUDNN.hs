@@ -1,6 +1,5 @@
 module TestSuite.Test.Convolution.CUDNN (tests) where
 
-import Data.List qualified as L
 import Data.Type.Nat
 import Data.Vec.Lazy (Vec(..))
 import Foreign
@@ -123,20 +122,21 @@ prop_mode params =
 -------------------------------------------------------------------------------}
 
 -- | cuDNN-style convolutions, but using our implementation
-convolve_cuDNN_style :: forall a.
-     (Fractional a, Real a)
-  => ConvolutionParams a -> Tensor Nat4 a
+convolve_cuDNN_style :: Real a => ConvolutionParams a -> Tensor Nat4 a
 convolve_cuDNN_style params =
-    Tensor.foreach input $ \(Tensor channels) -> Tensor [
-        fmap (L.foldl' (+) 0) . Tensor.distrib $
-          zipWith (Tensor.convolveWithStride stride') inputFeatures channels
-      | Tensor inputFeatures <- Tensor.getTensor kernels
+    Tensor.foreach input $ \channels -> Tensor [
+        -- Both the input and the kernel have 3 channels, so the result must
+        -- be a singleton "channel".
+        case Tensor.convolveWithStride stride' inputFeatures channels of
+          Tensor [result] -> result
+          _otherwise -> error "unexpected result"
+      | inputFeatures <- Tensor.getTensor kernels
       ]
   where
     ConvolutionParams{stride = (sv, sh), input, kernels} = params
 
-    stride' :: Vec Nat2 Int
-    stride' = sv ::: sh ::: VNil
+    stride' :: Vec Nat3 Int
+    stride' = 1 ::: sv ::: sh ::: VNil
 
 -- | Convolution parameters
 --
