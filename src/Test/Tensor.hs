@@ -97,6 +97,15 @@ import Test.QuickCheck qualified as QC
   Definition
 -------------------------------------------------------------------------------}
 
+-- | N-dimensional tensor
+--
+-- Invariants:
+--
+-- * The dimension must be strictly positive (zero is not allowed)
+-- * Tensors must be rectangular
+--
+-- (These invariants could in principle be enforced by using more precise types,
+-- but at the cost of much more complex code.)
 data Tensor n a where
   Scalar :: a -> Tensor Z a
   Tensor :: [Tensor n a] -> Tensor (S n) a
