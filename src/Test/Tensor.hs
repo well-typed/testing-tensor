@@ -129,7 +129,7 @@ getTensor (Tensor xs) = xs
 type Size n = Vec n Int
 
 -- | Analogue of 'List.length'
-size :: Tensor n a -> Size n
+size :: HasCallStack => Tensor n a -> Size n
 size (Scalar _)  = VNil
 size (Tensor xs) = L.length xs ::: size (L.head xs)
 
@@ -594,11 +594,11 @@ instance Show a => Show (Tensor n a) where
   Internal auxiliary: SNat
 -------------------------------------------------------------------------------}
 
-tensorSNatI :: Tensor n a -> (SNatI n => r) -> r
+tensorSNatI :: HasCallStack => Tensor n a -> (SNatI n => r) -> r
 tensorSNatI (Scalar _)  k = k
 tensorSNatI (Tensor xs) k = tensorSNatI (L.head xs) k
 
-tensorSNat :: Tensor n a -> SNat n
+tensorSNat :: HasCallStack => Tensor n a -> SNat n
 tensorSNat tensor = tensorSNatI tensor snat
 
 {-------------------------------------------------------------------------------
@@ -647,6 +647,6 @@ pickOne = \case
     go acc x (y:ys) = (reverse acc, x, (y:ys)) : go (x:acc) y ys
 
 -- | Distribute @f@ over @[]@
-distribList :: Functor f => Int -> f [a] -> [f a]
+distribList :: (HasCallStack, Functor f) => Int -> f [a] -> [f a]
 distribList 0 _   = []
-distribList n fxs = (head <$> fxs) : distribList (n - 1) (tail <$> fxs)
+distribList n fxs = (L.head <$> fxs) : distribList (n - 1) (tail <$> fxs)
