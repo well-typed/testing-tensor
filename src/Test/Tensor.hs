@@ -101,7 +101,7 @@ import Test.QuickCheck qualified as QC
 --
 -- Invariants:
 --
--- * The dimension must be strictly positive (zero is not allowed)
+-- * None of the dimensions may be empty
 -- * Tensors must be rectangular
 --
 -- (These invariants could in principle be enforced by using more precise types,
@@ -584,22 +584,39 @@ showConstructor p sn
     n' = snatToNatural sn
 
 instance Show a => Show (Tensor n a) where
-  showsPrec p tensor = showLists (Proxy @a) (tensorSNat tensor) $
-      showParen (p >= appPrec1) $
-          showConstructor appPrec1 (tensorSNat tensor)
-        . showSpace
-        . showsPrec appPrec1 (toLists tensor)
+  showsPrec p tensor = showParen (p >= appPrec1) $
+      case tensorSNat tensor of
+        Just sz ->
+          showLists (Proxy @a) sz $
+              showConstructor appPrec1 sz
+            . showSpace
+            . showsPrec appPrec1 (toLists tensor)
+        Nothing ->
+            showString "fromLists "
+          . showInvalid tensor
+    where
+      -- Tensors with empty dimensions are invalid, but if we fail to 'show'
+      -- them, that would make debugging code that accidentally creates them
+      -- unnecessarily difficult. We therefore special case this.
+      showInvalid :: forall m. Tensor m a -> ShowS
+      showInvalid (Scalar x)  = showsPrec 0 x
+      showInvalid (Tensor xs) =
+            showString "["
+          . L.foldr (.) id (L.intersperse (showString ",") (map showInvalid xs))
+          . showString "]"
 
 {-------------------------------------------------------------------------------
   Internal auxiliary: SNat
 -------------------------------------------------------------------------------}
 
-tensorSNatI :: HasCallStack => Tensor n a -> (SNatI n => r) -> r
-tensorSNatI (Scalar _)  k = k
-tensorSNatI (Tensor xs) k = tensorSNatI (L.head xs) k
+-- | Size of the tensor, unless it contains empty dimensions
+tensorSNatI :: Tensor n a -> r -> (SNatI n => r) -> r
+tensorSNatI (Scalar _    ) _    kOk = kOk
+tensorSNatI (Tensor (x:_)) kErr kOk = tensorSNatI x kErr kOk
+tensorSNatI (Tensor []   ) kErr _   = kErr
 
-tensorSNat :: HasCallStack => Tensor n a -> SNat n
-tensorSNat tensor = tensorSNatI tensor snat
+tensorSNat :: Tensor n a -> Maybe (SNat n)
+tensorSNat tensor = tensorSNatI tensor Nothing (Just snat)
 
 {-------------------------------------------------------------------------------
   Internal auxiliary: lists
