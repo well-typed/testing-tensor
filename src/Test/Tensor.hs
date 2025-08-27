@@ -37,6 +37,7 @@ module Test.Tensor (
   , foreachWith
     -- * Subtensors
   , subs
+  , subsWithStride
   , convolve
   , convolveWithStride
   , padWith
@@ -209,6 +210,12 @@ subs = \kernelSize input ->
         | selected <- consecutive r n (map (go rs ns) xs)
         ]
 
+-- | Generalization of 'subs' allowing for non-default stride
+subsWithStride ::
+     Vec n Int   -- ^ Stride
+  -> Size n -> Tensor n a -> Tensor n (Tensor n a)
+subsWithStride stride sz = applyStride stride . subs sz
+
 -- | Apply stride.
 --
 -- This is the N-dimensional equivalent of 'everyNth'.
@@ -237,7 +244,7 @@ convolveWithStride :: forall n a.
   -> Tensor n a  -- ^ Input
   -> Tensor n a
 convolveWithStride stride kernel input =
-    aux <$> applyStride stride (subs (size kernel) input)
+    aux <$> subsWithStride stride (size kernel) input
   where
     aux :: Tensor n a -> a
     aux = Foldable.foldl' (+) 0 . zipWith (*) kernel
