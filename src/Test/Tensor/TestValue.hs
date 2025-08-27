@@ -19,7 +19,17 @@ import Text.Printf (printf)
 -- Test values are suitable for use in QuickCheck tests involving floating
 -- point numbers, if you want to ignore rounding errors.
 newtype TestValue = TestValue Float
-  deriving newtype (Num, Fractional, Real, Random)
+  deriving newtype (
+      Enum
+    , Floating
+    , Fractional
+    , Num
+    , Random
+    , Read
+    , Real
+    , RealFloat
+    , RealFrac
+    )
 
 -- | Test values are equipped with a crude equality
 --
