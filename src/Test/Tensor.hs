@@ -75,7 +75,6 @@ import Prelude hiding (zipWith, replicate)
 
 import Control.Monad.Trans.State (StateT(..), evalStateT)
 import Data.Bifunctor
-import Data.Foldable (foldl')
 import Data.Foldable qualified as Foldable
 import Data.List qualified as L
 import Data.Maybe (catMaybes)
@@ -241,7 +240,7 @@ convolveWithStride stride kernel input =
     aux <$> applyStride stride (subs (size kernel) input)
   where
     aux :: Tensor n a -> a
-    aux = foldl' (+) 0 . zipWith (*) kernel
+    aux = Foldable.foldl' (+) 0 . zipWith (*) kernel
 
 {-------------------------------------------------------------------------------
   Padding
