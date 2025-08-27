@@ -29,6 +29,7 @@ module Test.Tensor (
   , sizeAtLeast
     -- * Standard operations
   , zipWith
+  , zipEach
   , replicate
   , rotate
   , distrib
@@ -145,6 +146,15 @@ sizeAtLeast sz = and . Foldable.toList . Vec.zipWith (<=) sz . size
 zipWith :: (a -> b -> c) -> Tensor n a -> Tensor n b -> Tensor n c
 zipWith f (Scalar a)  (Scalar b)  = Scalar (f a b)
 zipWith f (Tensor as) (Tensor bs) = Tensor $ L.zipWith (zipWith f) as bs
+
+-- | Zip each top-level dimension
+--
+-- Unlike 'zipWith', this allows for two tensors of different dimensions,
+-- somewhat similar to 'foreach'.
+zipEach ::
+     (Tensor n a -> Tensor m b -> Tensor l c)
+  -> Tensor (S n) a -> Tensor (S m) b -> Tensor (S l) c
+zipEach f (Tensor as) (Tensor bs) = Tensor $ L.zipWith f as bs
 
 -- | Analogue of 'List.replicate'
 replicate :: Size n -> a -> Tensor n a
