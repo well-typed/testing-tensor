@@ -34,8 +34,8 @@ module Test.Tensor (
   , rotate
   , distrib
   , transpose
-  , foreach
-  , foreachWith
+  , forEach
+  , forEachWith
     -- * Subtensors
   , subs
   , subsWithStride
@@ -150,7 +150,7 @@ zipWith f (Tensor as) (Tensor bs) = Tensor $ L.zipWith (zipWith f) as bs
 -- | Zip each top-level dimension
 --
 -- Unlike 'zipWith', this allows for two tensors of different dimensions,
--- somewhat similar to 'foreach'.
+-- somewhat similar to 'forEach'.
 zipEach ::
      (Tensor n a -> Tensor m b -> Tensor l c)
   -> Tensor (S n) a -> Tensor (S m) b -> Tensor (S l) c
@@ -183,16 +183,16 @@ transpose :: Tensor Nat2 a -> Tensor Nat2 a
 transpose = fromLists . L.transpose . toLists
 
 -- | Map element over the first dimension of the tensor
-foreach :: Tensor (S n) a -> (Tensor n a -> Tensor m b) -> Tensor (S m) b
-foreach (Tensor as) f = Tensor (Prelude.map f as)
+forEach :: Tensor (S n) a -> (Tensor n a -> Tensor m b) -> Tensor (S m) b
+forEach (Tensor as) f = Tensor (Prelude.map f as)
 
--- | Variation of 'foreach' with an auxiliary list
-foreachWith ::
+-- | Variation of 'forEach' with an auxiliary list
+forEachWith ::
     Tensor (S n) a
  -> [x]
  -> (Tensor n a -> x -> Tensor m b)
  -> Tensor (S m) b
-foreachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
+forEachWith (Tensor as) xs f = Tensor (L.zipWith f as xs)
 
 {-------------------------------------------------------------------------------
   Subtensors

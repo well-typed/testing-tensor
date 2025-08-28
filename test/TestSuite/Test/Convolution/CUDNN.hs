@@ -109,8 +109,8 @@ prop_mode params =
     === convolveCUDNN
           c_mode_convolution
           stride
-          ( Tensor.foreach kernels $ \outputFeature ->
-              Tensor.foreach outputFeature $ \inputFeature ->
+          ( Tensor.forEach kernels $ \outputFeature ->
+              Tensor.forEach outputFeature $ \inputFeature ->
                 Tensor.rotate inputFeature
           )
           input
@@ -124,7 +124,7 @@ prop_mode params =
 -- | cuDNN-style convolutions, but using our implementation
 convolve_cuDNN_style :: Real a => ConvolutionParams a -> Tensor Nat4 a
 convolve_cuDNN_style params =
-    Tensor.foreach input $ \channels -> Tensor [
+    Tensor.forEach input $ \channels -> Tensor [
         -- Both the input and the kernel have 3 channels, so the result must
         -- be a singleton "channel".
         case Tensor.convolveWithStride stride' inputFeatures channels of
